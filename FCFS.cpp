@@ -11,129 +11,152 @@ using namespace std;
 
 struct Process
 {
-    int processID;
-    int arrivalTime;
     int CPUburst;
-    int waitingTime;
-    int turnaroundTime;
-    int responseTime;
-    int completionTime;
 };
 
-void calculateFCFS(vector<Process>& processes)
+void calculateTimes(const vector<Process>& processes, vector<int>& waitingTime, 
+                   vector<int>& turnaroundTime, vector<int>& responseTime, 
+                   vector<int>& completionTime)
 {
-    int currentTime = 0;
+    int n = processes.size();
     
-    for (int i = 0; i < processes.size(); i++)
+    // First process
+    waitingTime[0] = 0;
+    responseTime[0] = 0;
+    turnaroundTime[0] = processes[0].CPUburst;
+    completionTime[0] = processes[0].CPUburst;
+    
+    // Rest of the processes
+    for (int i = 1; i < n; i++)
     {
-        // If CPU is idle, jump to next process arrival time
-        if (currentTime < processes[i].arrivalTime)
-        {
-            int idleTime = processes[i].arrivalTime - currentTime;
-            cout << "IDLE for " << idleTime << " units at time " << currentTime << "\n";
-            currentTime = processes[i].arrivalTime;
-        }
+        // Completion time = previous completion time + current burst
+        completionTime[i] = completionTime[i - 1] + processes[i].CPUburst;
         
-        // Response time = time when process first gets CPU - arrival time
-        processes[i].responseTime = currentTime - processes[i].arrivalTime;
+        // Waiting time = previous process completion time (when this process starts)
+        waitingTime[i] = completionTime[i - 1];
         
-        // Waiting time = time spent waiting before execution
-        processes[i].waitingTime = currentTime - processes[i].arrivalTime;
+        // Response time = waiting time (since process starts immediately when it's its turn)
+        responseTime[i] = waitingTime[i];
         
-        // Execute the process
-        currentTime += processes[i].CPUburst;
-        
-        // Completion time = when process finishes
-        processes[i].completionTime = currentTime;
-        
-        // Turnaround time = completion time - arrival time
-        processes[i].turnaroundTime = processes[i].completionTime - processes[i].arrivalTime;
+        // Turnaround time = completion time (since arrival time is 0 for all)
+        turnaroundTime[i] = completionTime[i];
     }
 }
 
-void printResults(const vector<Process>& processes)
+void printProcessBursts(const vector<Process>& processes, int numToShow)
+{
+    cout << "First " << numToShow << " Process CPU Bursts:\n";
+    for (int i = 0; i < numToShow && i < processes.size(); i++)
+    {
+        cout << "P" << i + 1 << ": " << processes[i].CPUburst << "\n";
+    }
+}
+
+void printResults(const vector<int>& waitingTime, const vector<int>& turnaroundTime, 
+                 const vector<int>& responseTime, const vector<int>& completionTime, 
+                 int numToShow)
 {
     cout << "\n========================================\n";
-    cout << "FCFS Scheduling Results\n";
+    cout << "FCFS Scheduling Results (First " << numToShow << " processes)\n";
     cout << "========================================\n";
+    cout << "Process\tWaiting\tTurnaround\tResponse\tCompletion\n";
+    cout << "-------------------------------------------------------\n";
     
-    cout << "\nProcess\tArrival\tBurst\tWaiting\tTurnaround\tResponse\tCompletion\n";
-    cout << "-----------------------------------------------------------------------\n";
-    
-    for (const auto& p : processes)
+    for (int i = 0; i < numToShow && i < waitingTime.size(); i++)
     {
-        cout << "P" << p.processID << "\t"
-             << p.arrivalTime << "\t"
-             << p.CPUburst << "\t"
-             << p.waitingTime << "\t"
-             << p.turnaroundTime << "\t\t"
-             << p.responseTime << "\t\t"
-             << p.completionTime << "\n";
+        cout << "P" << i + 1 << "\t"
+             << waitingTime[i] << "\t"
+             << turnaroundTime[i] << "\t\t"
+             << responseTime[i] << "\t\t"
+             << completionTime[i] << "\n";
     }
 }
 
-void calculateAndPrintAverages(const vector<Process>& processes)
+void calculateAndPrintAverages(const vector<int>& waitingTime, const vector<int>& turnaroundTime, 
+                              const vector<int>& responseTime, const vector<Process>& processes,
+                              int numProcesses)
 {
     double totalWaiting = 0;
     double totalTurnaround = 0;
     double totalResponse = 0;
-    int totalCPUBurstTime = 0;
-    int lastCompletionTime = 0;
+    int totalCPUBurst = 0;
     
-    for (const auto& p : processes)
+    for (int i = 0; i < numProcesses; i++)
     {
-        totalWaiting += p.waitingTime;
-        totalTurnaround += p.turnaroundTime;
-        totalResponse += p.responseTime;
-        totalCPUBurstTime += p.CPUburst;
-        
-        if (p.completionTime > lastCompletionTime)
-            lastCompletionTime = p.completionTime;
+        totalWaiting += waitingTime[i];
+        totalTurnaround += turnaroundTime[i];
+        totalResponse += responseTime[i];
+        totalCPUBurst += processes[i].CPUburst;
     }
     
-    int n = processes.size();
-    double avgWaiting = totalWaiting / n;
-    double avgTurnaround = totalTurnaround / n;
-    double avgResponse = totalResponse / n;
-    double cpuUtilization = (totalCPUBurstTime / (double)lastCompletionTime) * 100.0;
+    double avgWaiting = totalWaiting / numProcesses;
+    double avgTurnaround = totalTurnaround / numProcesses;
+    double avgResponse = totalResponse / numProcesses;
+    
+    // CPU Utilization: For FCFS with all processes at time 0, it's 100%
+    // unless there are idle periods (which would be in your process list)
+    int totalTime = turnaroundTime[numProcesses - 1];  // Last process completion time
+    double cpuUtilization = (totalCPUBurst / (double)totalTime) * 100.0;
     
     cout << fixed << setprecision(2);
     cout << "\n========================================\n";
-    cout << "Performance Metrics\n";
+    cout << "Performance Metrics (First " << numProcesses << " processes)\n";
     cout << "========================================\n";
     cout << "Average Waiting Time: " << avgWaiting << "\n";
     cout << "Average Turnaround Time: " << avgTurnaround << "\n";
     cout << "Average Response Time: " << avgResponse << "\n";
     cout << "CPU Utilization: " << cpuUtilization << "%\n";
-    cout << "Total Time: " << lastCompletionTime << "\n";
+    cout << "Total Time to Complete: " << totalTime << "\n";
 }
 
 int main()
 {
-    // Example: 8 processes with arrival times and CPU bursts
-    // Format: {processID, arrivalTime, CPUburst, 0, 0, 0, 0}
-    vector<Process> processes = {
-        {1, 0, 5, 0, 0, 0, 0},
-        {2, 5, 4, 0, 0, 0, 0},
-        {3, 9, 8, 0, 0, 0, 0},
-        {4, 17, 3, 0, 0, 0, 0},
-        {5, 20, 16, 0, 0, 0, 0},
-        {6, 36, 11, 0, 0, 0, 0},
-        {7, 47, 14, 0, 0, 0, 0},
-        {8, 61, 4, 0, 0, 0, 0}
+    vector<Process> processes = { 
+        {5}, {4}, {8}, {3}, {16}, {11}, {14}, {4},
+        {3}, {12}, {4}, {5}, {17}, {4}, {5}, {5}, {17}, {5},
+        {18}, {5}, {5}, {7}, {6}, {6}, {4}, {11}, {7}, {16}, {3},
+        {6}, {12}, {14}, {9}, {14}, {15}, {7}, {4}, {4}, {4}, {9},
+        {12}, {4}, {3}, {13}, {16}, {15}, {4}, {5}, {7}, {15}, {11},
+        {4}, {8}, {16}, {14}, {6}, {6}, {6}, {9}, {10}, {3}, {5},
+        {6}, // IDLE process of 6
+        {4},
+        {3}, // IDLE process of 3
+        {7},
+        {11}, // IDLE process of 11
+        {6},
+        {6}, // IDLE process of 6
+        {5},
+        {15}, // IDLE process of 15
+        {8},
+        {54}, // IDLE process of 54
+        {3} 
     };
     
+    int n = processes.size();
+    int numProcessesToShow = 8;  // Show only first 8 in detailed output
+    
+    vector<int> waitingTime(n);
+    vector<int> turnaroundTime(n);
+    vector<int> responseTime(n);
+    vector<int> completionTime(n);
+    
     cout << "FCFS (First Come First Serve) CPU Scheduling\n";
-    cout << "Number of processes: " << processes.size() << "\n";
+    cout << "Total processes in queue: " << n << "\n\n";
     
-    // Calculate all times using FCFS algorithm
-    calculateFCFS(processes);
+    // Calculate all times
+    calculateTimes(processes, waitingTime, turnaroundTime, responseTime, completionTime);
     
-    // Print detailed results
-    printResults(processes);
+    // Print CPU bursts for first 8
+    printProcessBursts(processes, numProcessesToShow);
     
-    // Print averages and statistics
-    calculateAndPrintAverages(processes);
+    // Print detailed results for first 8
+    printResults(waitingTime, turnaroundTime, responseTime, completionTime, numProcessesToShow);
+    
+    // Calculate and print averages for first 8
+    calculateAndPrintAverages(waitingTime, turnaroundTime, responseTime, processes, numProcessesToShow);
+    
+    cout << "\n\nNote: IDLE processes are included in the full process queue.\n";
+    cout << "Total processes including IDLE: " << n << "\n";
     
     return 0;
 }
