@@ -1,9 +1,9 @@
 /*
 Author: Giannfranco Crovetto
-Date: 1/6/26
-FCFS non-preemptive scheduling implementation of CPU Scheduler
+Date: 9/22/23
+Assignment 1: FCFS non-preemptive scheduling implementation of CPU Scheduler
+With I/O blocking and arrival times
 */
-
 #include<iostream>
 #include<vector>
 #include<queue>
@@ -38,7 +38,16 @@ struct Event
     }
 };
 
-void simulateFCFS(vector<BurstSequence>& processes)
+struct BurstExecution
+{
+    int processID;
+    int burstNumber;
+    int startTime;
+    int endTime;
+    int duration;
+};
+
+void simulateFCFS(vector<BurstSequence>& processes, vector<BurstExecution>& executions)
 {
     priority_queue<Event, vector<Event>, greater<Event>> readyQueue;
     int currentTime = 0;
@@ -83,7 +92,13 @@ void simulateFCFS(vector<BurstSequence>& processes)
         
         // Execute CPU burst
         int cpuBurst = p.cpuBursts[p.currentBurstIndex];
-        cout << "Time " << currentTime << "-" << (currentTime + cpuBurst)
+        int startTime = currentTime;
+        int endTime = currentTime + cpuBurst;
+        
+        // Record this execution
+        executions.push_back({p.processID, p.currentBurstIndex + 1, startTime, endTime, cpuBurst});
+        
+        cout << "Time " << startTime << "-" << endTime
              << ": P" << p.processID << " executing CPU burst #" 
              << (p.currentBurstIndex + 1) << " (" << cpuBurst << " units)\n";
         
@@ -115,6 +130,26 @@ void simulateFCFS(vector<BurstSequence>& processes)
     cout << "\nTotal time: " << currentTime << "\n";
 }
 
+void printBurstByBurstTable(const vector<BurstExecution>& executions)
+{
+    cout << "\n========================================\n";
+    cout << "Detailed Burst-by-Burst Execution Table\n";
+    cout << "========================================\n";
+    cout << "Process\tBurst#\tStart\tEnd\tDuration\n";
+    cout << "-----------------------------------------------\n";
+    
+    for (const auto& exec : executions)
+    {
+        cout << "P" << exec.processID << "\t"
+             << exec.burstNumber << "\t"
+             << exec.startTime << "\t"
+             << exec.endTime << "\t"
+             << exec.duration << "\n";
+    }
+    
+    cout << "\nTotal CPU bursts executed: " << executions.size() << "\n";
+}
+
 void printDetailedResults(const vector<BurstSequence>& processes)
 {
     cout << "\n========================================\n";
@@ -139,7 +174,7 @@ void printDetailedResults(const vector<BurstSequence>& processes)
 void printSummaryTable(const vector<BurstSequence>& processes)
 {
     cout << "\n========================================\n";
-    cout << "Summary Table\n";
+    cout << "Summary Table (Per Process)\n";
     cout << "========================================\n";
     cout << "Process\tResponse\tWaiting\tTurnaround\tCompletion\n";
     cout << "-------------------------------------------------------\n";
@@ -195,6 +230,7 @@ void calculateAndPrintAverages(const vector<BurstSequence>& processes)
 int main()
 {
     vector<BurstSequence> processes(8);
+    vector<BurstExecution> executions;
     
     // P1: CPU, I/O, CPU, I/O, ...
     processes[0] = {1, {5, 3, 5, 4, 6, 4, 3, 4}, {27, 31, 43, 18, 22, 26, 24}, 0, 0, -1, 0, 0, false, false};
@@ -224,7 +260,10 @@ int main()
     cout << "8 Processes with CPU and I/O bursts\n";
     
     // Simulate FCFS
-    simulateFCFS(processes);
+    simulateFCFS(processes, executions);
+    
+    // Print burst-by-burst table (NEW!)
+    printBurstByBurstTable(executions);
     
     // Print results
     printDetailedResults(processes);
