@@ -6,30 +6,47 @@ FCFS non-preemptive scheduling implementation of CPU Scheduler
 
 #include<iostream>
 #include<vector>
+#include<queue>
 #include<iomanip>
+#include<algorithm>
 using namespace std;
 
-struct Process
+struct BurstSequence
 {
     int processID;
     vector<int> cpuBursts;
+    vector<int> ioBursts;
     int currentBurstIndex;
-    int totalWaitingTime;
-    int totalResponseTime;
-    int completionTime;
+    int arrivalTime;
     int firstResponseTime;
+    int completionTime;
+    int totalWaitingTime;
     bool hasStarted;
+    bool isComplete;
 };
 
-void simulateFCFS(vector<Process>& processes)
+struct Event
 {
-    int currentTime = 0;
-    vector<int> readyQueue; // Indices of processes ready to execute
+    int time;
+    int processID;
     
-    // Initialize all processes in ready queue
+    bool operator>(const Event& other) const
+    {
+        if (time == other.time)
+            return processID > other.processID;
+        return time > other.time;
+    }
+};
+
+void simulateFCFS(vector<BurstSequence>& processes)
+{
+    priority_queue<Event, vector<Event>, greater<Event>> readyQueue;
+    int currentTime = 0;
+    
+    // Add all processes at time 0 (initial arrival)
     for (int i = 0; i < processes.size(); i++)
     {
-        readyQueue.push_back(i);
+        readyQueue.push({0, i});
     }
     
     cout << "\n========================================\n";
@@ -38,11 +55,24 @@ void simulateFCFS(vector<Process>& processes)
     
     while (!readyQueue.empty())
     {
-        int currentProcessIdx = readyQueue.front();
-        readyQueue.erase(readyQueue.begin());
+        Event nextEvent = readyQueue.top();
+        readyQueue.pop();
         
-        Process& p = processes[currentProcessIdx];
-        int burstTime = p.cpuBursts[p.currentBurstIndex];
+        int processIdx = nextEvent.processID;
+        BurstSequence& p = processes[processIdx];
+        
+        // If process arrives in the future, advance time (CPU idle)
+        if (nextEvent.time > currentTime)
+        {
+            int idleTime = nextEvent.time - currentTime;
+            cout << "Time " << currentTime << "-" << nextEvent.time 
+                 << ": CPU IDLE (" << idleTime << " units)\n";
+            currentTime = nextEvent.time;
+        }
+        
+        // Calculate waiting time for this burst
+        int waitTime = currentTime - nextEvent.time;
+        p.totalWaitingTime += waitTime;
         
         // Record first response time
         if (!p.hasStarted)
@@ -51,110 +81,86 @@ void simulateFCFS(vector<Process>& processes)
             p.hasStarted = true;
         }
         
-        cout << "Time " << currentTime << "-" << (currentTime + burstTime) 
-             << ": P" << p.processID << " (Burst #" << (p.currentBurstIndex + 1) << ")\n";
+        // Execute CPU burst
+        int cpuBurst = p.cpuBursts[p.currentBurstIndex];
+        cout << "Time " << currentTime << "-" << (currentTime + cpuBurst)
+             << ": P" << p.processID << " executing CPU burst #" 
+             << (p.currentBurstIndex + 1) << " (" << cpuBurst << " units)\n";
         
-        currentTime += burstTime;
-        p.currentBurstIndex++;
+        currentTime += cpuBurst;
         
-        // If process has more bursts, add it back to the end of queue
-        if (p.currentBurstIndex < p.cpuBursts.size())
+        // Check if process has more bursts
+        if (p.currentBurstIndex < p.ioBursts.size())
         {
-            readyQueue.push_back(currentProcessIdx);
+            // Process goes to I/O
+            int ioBurst = p.ioBursts[p.currentBurstIndex];
+            int returnTime = currentTime + ioBurst;
+            
+            cout << "       P" << p.processID << " goes to I/O for " 
+                 << ioBurst << " units (returns at time " << returnTime << ")\n";
+            
+            p.currentBurstIndex++;
+            readyQueue.push({returnTime, processIdx});
         }
         else
         {
-            // Process completed all bursts
+            // Process completed
             p.completionTime = currentTime;
+            p.isComplete = true;
+            cout << "       P" << p.processID << " COMPLETED at time " 
+                 << currentTime << "\n";
         }
-    }
-}
-
-void calculateMetrics(vector<Process>& processes)
-{
-    // Calculate waiting and response times
-    int currentTime = 0;
-    vector<int> readyQueue;
-    vector<int> lastExecutionTime(processes.size(), 0);
-    
-    for (int i = 0; i < processes.size(); i++)
-    {
-        readyQueue.push_back(i);
-        processes[i].totalWaitingTime = 0;
     }
     
-    while (!readyQueue.empty())
-    {
-        int currentProcessIdx = readyQueue.front();
-        readyQueue.erase(readyQueue.begin());
-        
-        Process& p = processes[currentProcessIdx];
-        int burstIdx = 0;
-        
-        // Count how many bursts this process has executed
-        for (int i = 0; i < processes.size(); i++)
-        {
-            if (i == currentProcessIdx)
-            {
-                for (int j = 0; j < readyQueue.size(); j++)
-                {
-                    if (readyQueue[j] == currentProcessIdx)
-                        burstIdx++;
-                }
-                break;
-            }
-        }
-        
-        // Waiting time is current time minus last execution time
-        int waitingTime = currentTime - lastExecutionTime[currentProcessIdx];
-        p.totalWaitingTime += waitingTime;
-        
-        int burstTime = p.cpuBursts[burstIdx];
-        currentTime += burstTime;
-        lastExecutionTime[currentProcessIdx] = currentTime;
-        
-        // Check if process has more bursts
-        if (burstIdx + 1 < p.cpuBursts.size())
-        {
-            readyQueue.push_back(currentProcessIdx);
-        }
-    }
+    cout << "\nTotal time: " << currentTime << "\n";
 }
 
-void printResults(const vector<Process>& processes)
+void printDetailedResults(const vector<BurstSequence>& processes)
 {
     cout << "\n========================================\n";
-    cout << "Final Results for All 8 Processes\n";
+    cout << "Process Details\n";
     cout << "========================================\n";
-    cout << "Process\tBursts\tWaiting\tTurnaround\tResponse\tCompletion\n";
-    cout << "-------------------------------------------------------------------\n";
     
     for (const auto& p : processes)
     {
-        int totalBurstTime = 0;
+        int totalCPU = 0;
         for (int burst : p.cpuBursts)
-        {
-            totalBurstTime += burst;
-        }
+            totalCPU += burst;
         
-        int turnaroundTime = p.completionTime;
-        
+        cout << "\nP" << p.processID << ":\n";
+        cout << "  CPU Bursts: " << p.cpuBursts.size() << " (Total: " << totalCPU << " units)\n";
+        cout << "  Response Time: " << p.firstResponseTime << "\n";
+        cout << "  Waiting Time: " << p.totalWaitingTime << "\n";
+        cout << "  Turnaround Time: " << p.completionTime << "\n";
+        cout << "  Completion Time: " << p.completionTime << "\n";
+    }
+}
+
+void printSummaryTable(const vector<BurstSequence>& processes)
+{
+    cout << "\n========================================\n";
+    cout << "Summary Table\n";
+    cout << "========================================\n";
+    cout << "Process\tResponse\tWaiting\tTurnaround\tCompletion\n";
+    cout << "-------------------------------------------------------\n";
+    
+    for (const auto& p : processes)
+    {
         cout << "P" << p.processID << "\t"
-             << p.cpuBursts.size() << "\t"
-             << p.totalWaitingTime << "\t"
-             << turnaroundTime << "\t\t"
              << p.firstResponseTime << "\t\t"
+             << p.totalWaitingTime << "\t"
+             << p.completionTime << "\t\t"
              << p.completionTime << "\n";
     }
 }
 
-void calculateAndPrintAverages(const vector<Process>& processes)
+void calculateAndPrintAverages(const vector<BurstSequence>& processes)
 {
     double totalWaiting = 0;
     double totalTurnaround = 0;
     double totalResponse = 0;
-    int totalCPUBurstTime = 0;
-    int lastCompletionTime = 0;
+    int totalCPUTime = 0;
+    int maxCompletionTime = 0;
     
     for (const auto& p : processes)
     {
@@ -163,19 +169,17 @@ void calculateAndPrintAverages(const vector<Process>& processes)
         totalResponse += p.firstResponseTime;
         
         for (int burst : p.cpuBursts)
-        {
-            totalCPUBurstTime += burst;
-        }
+            totalCPUTime += burst;
         
-        if (p.completionTime > lastCompletionTime)
-            lastCompletionTime = p.completionTime;
+        if (p.completionTime > maxCompletionTime)
+            maxCompletionTime = p.completionTime;
     }
     
     int n = processes.size();
     double avgWaiting = totalWaiting / n;
     double avgTurnaround = totalTurnaround / n;
     double avgResponse = totalResponse / n;
-    double cpuUtilization = (totalCPUBurstTime / (double)lastCompletionTime) * 100.0;
+    double cpuUtilization = (totalCPUTime / (double)maxCompletionTime) * 100.0;
     
     cout << fixed << setprecision(2);
     cout << "\n========================================\n";
@@ -185,57 +189,46 @@ void calculateAndPrintAverages(const vector<Process>& processes)
     cout << "Average Turnaround Time: " << avgTurnaround << "\n";
     cout << "Average Response Time: " << avgResponse << "\n";
     cout << "CPU Utilization: " << cpuUtilization << "%\n";
-    cout << "Total Time: " << lastCompletionTime << "\n";
+    cout << "Total Execution Time: " << maxCompletionTime << "\n";
 }
 
 int main()
 {
-    // Initialize 8 processes with their CPU bursts
-    vector<Process> processes(8);
+    vector<BurstSequence> processes(8);
     
-    // P1
-    processes[0] = {1, {5, 3, 17, 4, 9, 12, 7, 6, 3, 54}, 0, 0, 0, 0, 0, false};
+    // P1: CPU, I/O, CPU, I/O, ...
+    processes[0] = {1, {5, 3, 5, 4, 6, 4, 3, 4}, {27, 31, 43, 18, 22, 26, 24}, 0, 0, -1, 0, 0, false, false};
     
     // P2
-    processes[1] = {2, {4, 12, 5, 11, 14, 4, 15, 6, 7, 3}, 0, 0, 0, 0, 0, false};
+    processes[1] = {2, {4, 5, 7, 12, 9, 4, 9, 7, 8}, {48, 44, 42, 37, 76, 41, 31, 43}, 0, 0, -1, 0, 0, false, false};
     
     // P3
-    processes[2] = {3, {8, 4, 18, 7, 15, 3, 11, 9, 11}, 0, 0, 0, 0, 0, false};
+    processes[2] = {3, {8, 12, 18, 14, 4, 15, 14, 5, 6}, {33, 41, 65, 21, 61, 18, 26, 31}, 0, 0, -1, 0, 0, false, false};
     
     // P4
-    processes[3] = {4, {3, 5, 5, 16, 7, 13, 4, 10, 6}, 0, 0, 0, 0, 0, false};
+    processes[3] = {4, {3, 4, 5, 3, 4, 5, 6, 5, 3}, {35, 41, 45, 51, 61, 54, 82, 77}, 0, 0, -1, 0, 0, false, false};
     
     // P5
-    processes[4] = {5, {16, 17, 5, 3, 4, 16, 8, 3, 6}, 0, 0, 0, 0, 0, false};
+    processes[4] = {5, {16, 17, 5, 16, 7, 13, 11, 6, 3, 4}, {24, 21, 36, 26, 31, 28, 21, 13, 11}, 0, 0, -1, 0, 0, false, false};
     
     // P6
-    processes[5] = {6, {11, 4, 7, 6, 4, 15, 16, 5, 5}, 0, 0, 0, 0, 0, false};
+    processes[5] = {6, {11, 4, 5, 6, 7, 9, 12, 15, 8}, {22, 8, 10, 12, 14, 18, 24, 30}, 0, 0, -1, 0, 0, false, false};
     
     // P7
-    processes[6] = {7, {14, 5, 6, 12, 4, 4, 14, 6, 15}, 0, 0, 0, 0, 0, false};
+    processes[6] = {7, {14, 17, 11, 15, 4, 7, 16, 10}, {46, 41, 42, 21, 32, 19, 33}, 0, 0, -1, 0, 0, false, false};
     
     // P8
-    processes[7] = {8, {4, 5, 6, 14, 9, 5, 6, 4, 8}, 0, 0, 0, 0, 0, false};
+    processes[7] = {8, {4, 5, 6, 14, 16, 6}, {14, 33, 51, 73, 87}, 0, 0, -1, 0, 0, false, false};
     
-    cout << "FCFS Multi-Burst CPU Scheduling\n";
-    cout << "8 Processes with multiple CPU bursts each\n";
+    cout << "FCFS CPU Scheduling with I/O\n";
+    cout << "8 Processes with CPU and I/O bursts\n";
     
-    // Simulate FCFS execution
+    // Simulate FCFS
     simulateFCFS(processes);
     
-    // Reset for metric calculation
-    for (auto& p : processes)
-    {
-        p.currentBurstIndex = 0;
-        p.hasStarted = false;
-    }
-    
-    calculateMetrics(processes);
-    
     // Print results
-    printResults(processes);
-    
-    // Print averages
+    printDetailedResults(processes);
+    printSummaryTable(processes);
     calculateAndPrintAverages(processes);
     
     return 0;
